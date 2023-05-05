@@ -1,0 +1,256 @@
+---
+title: "Final Project Summary Report"
+author: "Moe Toyoda"
+date: "2023-04-24"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    code_folding: show
+---
+
+Description of the Data:
+In this project, we will be looking at a Google reviews dataset. The dataset contains reviews (rating scale 1-5) on attractions from 24 categories across Europe, and the average user rating per category is calculated.
+
+## Part 1
+
+The main objectives of the dataset are to analyze the reviewers’ activities and identify if there are any similarities (or clusters) in the reviewers. Think about the task of an advertising sales director who wishes to send out ads to promote a new restaurant. However, there is a limited budget. So your job is to build a profile filter to identify the group of individuals that will likely be interested in exploring a new restaurant.
+
+
+With that purpose, you need to:
+
+- perform some preliminary analyses on the entire dataset to get some insight of the observations and variables, such as getting the summary statistics, constructing a scatterplot to examine the pairwise correlations, and identifying outlying observations.
+
+- perform statistical analyses to examine the similarities/dissimilarities among the reviewers.
+
+- briefly interpret the findings with supporting summary statistics or graphs.
+
+```{r message=FALSE, warning=FALSE}
+library(readr)
+GReview <- read_csv("Data/google_review_ratings.csv")
+GReview <- GReview[,-26]
+
+GReview$User<-as.character(1:nrow(GReview))
+#head(GReview)
+#str(GReview)
+
+colnames(GReview)<-c("ID","church","resort","beach","park","theatre","museum",
+                     "mall", "zoo","restaurant","bar","local_ser","bur_pizza",
+                     "hotel","juice","art_gal","dance_club","pool","gym",
+                     "bakery","salon","cafes","view_pt","monument","garden")
+
+#library(skimr)
+#skim(GReview)
+
+GReview<-na.omit(GReview) #remove NA row 
+
+library(tidyverse)
+GReview %>% filter(restaurant>=2) %>% summarise(n())
+
+GReview<- GReview[,-1]
+```
+
+
+```{r message=FALSE, warning=FALSE}
+
+#correlation matrix
+library(GGally)
+ggcorr(GReview, size= 3, angle = 30,label=T, label_alpha=0.65, label_round=2, label_size=1.8)
+
+```
+
+
+According to the correlation matrix, it appears that restaurants are more correlated with bar, zoo, mall, and local services.
+
+
+
+
+```{r message=FALSE, warning=FALSE}
+#k-means clustering
+library(jtools)
+df <- gscale(data = GReview, binary.inputs = "-0.5/0.5", n.sd=1)
+#skim(df)
+library(factoextra)
+library(cluster)
+fviz_nbclust(df, kmeans, method = "wss")
+fviz_nbclust(df, kmeans, method = "silhouette")
+gap_stat <- clusGap(df,FUN=kmeans, nstart = 5, K.max = 10, B = 10)
+fviz_gap_stat(gap_stat)
+```
+
+
+According to the Elbow Method and Silhouette Method, I concluded the optimal number of clusters for this particular analysis is 3 considering the limited budget (we want smaller number in a 
+
+
+```{r message=FALSE, warning=FALSE}
+kms<-kmeans(df,centers=3,nstart=3)
+
+fviz_cluster(kms, data = df[,1:24],
+             palette = c("green", "blue", "red"), 
+             geom = "point",
+             ellipse.type = "convex", 
+             ggtheme = theme_bw()
+             ) +
+  labs(title="Clusters plotted with pricipal coordinates")
+```
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(tidyverse)
+GReview$Cluster <- as.character(kms$cluster)
+table <- GReview %>%
+  group_by(Cluster)%>%
+  summarise(Mean = mean(restaurant), Median = median(restaurant), N=n())
+
+knitr::kable(table, "simple",  caption = "Restaurant Rating Summary Statistics")
+
+ggplot(GReview) +
+  aes(x = "", y = restaurant, fill = Cluster, group = Cluster) +
+  geom_boxplot() +
+  scale_fill_manual(
+    values = c(`1` = "#04F868",
+    `2` = "#0E21DF",
+    `3` = "#F80413")
+  ) +
+  coord_flip() +
+  theme_minimal()
+```
+
+
+
+Boxplot and statistical summary of the restaurant shows that Cluster 2 has the highest rating in restaurant. However, cluster 2 is negatively skewed - the tail of the distribution extends more to the left than the right. Additionally, the left whisker of the boxplot for Cluster 2 covers the entire population of Cluster 3, which implies 75% of population of cluster 3 has all higher than the highest value in Cluster 2. By remoivng left whisker (first 25%) of the population in cluster 3, we can obtain smaller samples that has more strong relationship with higher restaurant ratings. 
+
+
+
+```{r message=FALSE, warning=FALSE}
+#choosing variable that has high correlation with restaurant 
+cluster2 <- GReview %>%
+  filter(Cluster == 2 ) 
+quantile(cluster2$restaurant, probs = c(0.25,1))
+cluster2a <-cluster2 %>%
+  filter(restaurant >= 2.99 & restaurant <= 5) 
+
+table2 <- cluster2a %>%summarise(Mean = mean(restaurant), Median= median(restaurant), N=n())
+ 
+knitr::kable(table2, "simple",  caption = "Restaurant Rating Summary Statistics For Cluster 2")
+```
+
+
+After removing the first 25% quintuple, we could obtain higher value in rating over all with total sample of 1817.
+
+
+
+```{r message=FALSE, warning=FALSE}
+library(ggplot2)
+library(GGally)
+ggpairs(GReview, 7:11, mapping=aes(color = Cluster, alpha = 0.5), 
+        diag=list(continuous = wrap("box_no_facet")), 
+        lower=list(continuous = wrap("points", alpha=0.9), 
+                   combo = wrap("facethist",bins=5)) ) +
+  scale_fill_brewer(palette="Set1", direction=-1) +
+  scale_color_brewer(palette="Set1", direction=-1)
+```
+
+
+Additionally, based on the information presented in the figure above, the box plot and correlation coefficient indicate that Cluster 2 is strongly correlated with high ratings on bars, malls, and zoos. Therefore, if the budget allows, it would be an effective strategy to advertise the new restaurant in these areas, as it would introduce the restaurant to a group of individuals who are likely to be interested in exploring new dining options.
+
+
+
+## Part 2
+Propose a question you think the data are able to answer. You will present these at the presentation.
+
+- State the question in your report.
+
+- Include graphical representations and summary statistics that are most interesting/suited for your analyses. Choose the appropriate tests/models to answer the question.
+
+
+Choosing only highly rated varirable (mean>2.5), can we achieve having more clear separation in clustering? if so, what is the main variable in each cluster? 
+
+
+
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+GReview[,1:24] %>%
+  summarise_all(mean) 
+```
+```{r message=FALSE, warning=FALSE}
+
+GReview2 <- GReview[,1:24] %>%
+  select(mall, restaurant, bar, park, theatre, museum,  zoo, local_ser)
+
+```
+
+
+```{r message=FALSE, warning=FALSE}
+#correlation matrix
+library(GGally)
+ggcorr(GReview2, size= 3, angle = 30,label=T, label_alpha=0.65, label_round=2, label_size=1.8)
+```
+
+
+The correlation heat map revealed the clear separation between varibales;
+
+- Cluster A: mall, restaurant, bar
+- Cluster B: park, theatre, museum
+- Cluster C: zoo, bar, local_ser (restaurant)
+
+
+
+```{r message=FALSE, warning=FALSE}
+#k-means clustering
+library(jtools)
+df <- gscale(data = GReview2, binary.inputs = "-0.5/0.5", n.sd=1)
+#skim(df)
+library(factoextra)
+library(cluster)
+fviz_nbclust(df, kmeans, method = "wss") #3
+```
+
+```{r message=FALSE, warning=FALSE}
+kms<-kmeans(df,centers=3,nstart=3)
+
+fviz_cluster(kms, data = df,
+             palette = c("green", "blue", "red"), 
+             geom = "point",
+             ellipse.type = "convex", 
+             ggtheme = theme_bw()
+             ) +
+  labs(title="Clusters plotted with pricipal coordinates")
+```
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+GReview2$Cluster <- as.character(kms$cluster)
+
+table <- GReview2 %>%
+  filter(Cluster==1) %>%
+  summarise(Mean = mean(restaurant), Median= median(restaurant), N=n())%>%
+  round(digits = 2)
+
+knitr::kable(table, "simple",  caption = "Restaurant Rating Summary Statistics For Cluster      Using Only 8 variable ")
+
+tablea <-GReview %>%
+  filter(Cluster==3) %>%
+  summarise(Mean = mean(restaurant), Median= median(restaurant), N=n())%>%
+  round(digits = 2)
+
+knitr::kable(tablea, "simple",  caption = "Restaurant Rating Summary Statistics For Cluster      Using All 24 variable")
+
+```
+
+After conducting K-mean cluster analysis with 8 variables, we could obtain clear separations in clustering. Moreover, summary statistics showed higher mean and median in restaurant rating with smaller sample number. 
+
+
+
+```{r message=FALSE, warning=FALSE}
+ggpairs(GReview2, c(1,2,3,4,5,6), mapping=aes(color = Cluster, alpha = 0.5), 
+        diag=list(continuous = wrap("box_no_facet")), 
+        lower=list(continuous = wrap("points", alpha=0.9), 
+                   combo = wrap("facethist",bins=5)) ) +
+  scale_fill_brewer(palette="Set1", direction=-1) +
+  scale_color_brewer(palette="Set1", direction=-1)
+```
+
+
+Over all, conducting cluster analysis with limited variable provided clear separation and strong insight in each cluster.  In cluster 1, we obtianed median of 5 in all of mall, restaurant and bar. In cluster 3, we obtained median of close to 5 in theatre and museum. 
